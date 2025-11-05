@@ -1,207 +1,605 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+import os
+import math
+from datetime import datetime
+import pandas as pd
 
-# C extensions
-*.so
+# ---------------- Config & paths ----------------
+DATA_DIR = "data"
+DAILY_DIR = os.path.join(DATA_DIR, "daily")
+CUSTOMER_DIR = os.path.join(DATA_DIR, "customers")
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(DAILY_DIR, exist_ok=True)
+os.makedirs(CUSTOMER_DIR, exist_ok=True)
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+INVENTORY_FILE = os.path.join(DATA_DIR, "inventory.csv")       # columns: Name,Price,Quantity,ExpiryDate,MfgDate
+ALL_BILLS_FILE = os.path.join(DATA_DIR, "all_bills.csv")       # columns: BillID,CustomerName,CustomerID,Medicine,Quantity,Price,TotalCost,DateTime
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+ADMIN_PASSWORD = "admin123"
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+TABLE_WIDTH = 78
+BORDER = "-" * TABLE_WIDTH
+OP_COMPLETE = "💊3---------------------- Operation Completed Successfully ----------------------💊"
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+# ---------------- Helpers ----------------
+def now_ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# Translations
-*.mo
-*.pot
+def today_str():
+    return datetime.now().strftime("%Y-%m-%d")
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+def ensure_all_files():
+    # inventory
+    if not os.path.exists(INVENTORY_FILE):
+        df = pd.DataFrame(columns=["Name","Price","Quantity","ExpiryDate","MfgDate"])
+        df.to_csv(INVENTORY_FILE, index=False)
+    # all bills
+    if not os.path.exists(ALL_BILLS_FILE):
+        df = pd.DataFrame(columns=["BillID","CustomerName","CustomerID","Medicine","Quantity","Price","TotalCost","DateTime"])
+        df.to_csv(ALL_BILLS_FILE, index=False)
 
-# Flask stuff:
-instance/
-.webassets-cache
+def load_inventory():
+    return pd.read_csv(INVENTORY_FILE)
 
-# Scrapy stuff:
-.scrapy
+def save_inventory(df):
+    df.to_csv(INVENTORY_FILE, index=False)
 
-# Sphinx documentation
-docs/_build/
+def load_all_bills():
+    return pd.read_csv(ALL_BILLS_FILE)
 
-# PyBuilder
-.pybuilder/
-target/
+def save_all_bills(df):
+    df.to_csv(ALL_BILLS_FILE, index=False)
 
-# Jupyter Notebook
-.ipynb_checkpoints
+def clean_name(name: str):
+    return "".join(c for c in name if c.isalnum() or c in ('_', '-')).replace(" ", "_")
 
-# IPython
-profile_default/
-ipython_config.py
+def next_bill_id():
+    df = load_all_bills()
+    if df.empty:
+        return 1
+    return int(df["BillID"].max()) + 1
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+def round_up_to_10(n):
+    return int(math.ceil(n / 10.0) * 10)
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+def print_header(title: str):
+    print("\n" + BORDER)
+    print(title.center(TABLE_WIDTH))
+    print(BORDER)
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
+def print_footer_and_done():
+    print(BORDER)
+    print(OP_COMPLETE + "\n")
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
+# ---------------- Core class ----------------
+class DigitalMedicalShop:
+    def __init__(self):
+        ensure_all_files()
+        self.inventory = load_inventory()
+        self.all_bills = load_all_bills()
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
+    # ---------- Inventory functions ----------
+    def add_medicine(self):
+        print_header("➕ ADD MEDICINE")
+        name = input("Enter medicine name: ").strip()
+        if name == "":
+            print("❌ Name required.")
+            return
+        if name in self.inventory["Name"].values:
+            print("⚠️ Medicine already exists. Use Update instead.")
+            return
+        try:
+            price = float(input("Enter price (₹): ").strip())
+            qty = int(input("Enter quantity: ").strip())
+        except ValueError:
+            print("❌ Invalid numerical input.")
+            return
+        mfg = input("Enter manufacturing date (YYYY-MM-DD): ").strip()
+        exp = input("Enter expiry date (YYYY-MM-DD): ").strip()
+        row = {"Name": name, "Price": price, "Quantity": qty, "ExpiryDate": exp, "MfgDate": mfg}
+        self.inventory = pd.concat([self.inventory, pd.DataFrame([row])], ignore_index=True)
+        save_inventory(self.inventory)
+        print_header("💾 All data saved successfully.")
+        print(f"| {'Medicine Name':<25} | {'Price (₹)':<8} | {'Quantity':<8} |")
+        print(BORDER)
+        print(f"| {name:<25} | ₹{price:<7.2f} | {qty:<8} |")
+        print_footer_and_done()
 
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
+    def update_medicine(self):
+        print_header("✏️ UPDATE MEDICINE")
+        name = input("Enter medicine name to update: ").strip()
+        if name == "" or (name not in self.inventory["Name"].values):
+            print("❌ Medicine not found.")
+            return
+        idx = self.inventory[self.inventory["Name"]==name].index[0]
+        while True:
+            print("\nWhat to update?")
+            print("1. Price\n2. Quantity\n3. Expiry Date\n4. Manufacturing Date\n5. Done")
+            ch = input("Enter choice: ").strip()
+            ts = now_ts()
+            if ch == "1":
+                try:
+                    new_price = float(input("Enter new price: ").strip())
+                except ValueError:
+                    print("❌ Invalid price.")
+                    continue
+                old_price = self.inventory.at[idx,"Price"]
+                self.inventory.at[idx,"Price"] = new_price
+                save_inventory(self.inventory)
+                print_header("🔄 Update - Price")
+                print(f"| Action          | Medicine Name        | Old Price | New Price | Timestamp             |")
+                print(BORDER)
+                print(f"| Updated Details | {name:<20} | ₹{old_price:<8.2f} | ₹{new_price:<8.2f} | {ts:<20} |")
+                print_footer_and_done()
+            elif ch == "2":
+                try:
+                    new_qty = int(input("Enter new quantity: ").strip())
+                except ValueError:
+                    print("❌ Invalid quantity.")
+                    continue
+                old_qty = int(self.inventory.at[idx,"Quantity"])
+                self.inventory.at[idx,"Quantity"] = new_qty
+                save_inventory(self.inventory)
+                print_header("🔄 Update - Quantity")
+                print(f"| Action          | Medicine Name        | Old Qty | New Qty | Timestamp             |")
+                print(BORDER)
+                print(f"| Updated Details | {name:<20} | {old_qty:<7} | {new_qty:<7} | {ts:<20} |")
+                print_footer_and_done()
+            elif ch == "3":
+                new_exp = input("Enter new expiry date (YYYY-MM-DD): ").strip()
+                old_exp = self.inventory.at[idx,"ExpiryDate"]
+                self.inventory.at[idx,"ExpiryDate"] = new_exp
+                save_inventory(self.inventory)
+                print_header("🔄 Update - Expiry Date")
+                print(f"| Action          | Medicine Name        | Old Expiry  | New Expiry  | Timestamp             |")
+                print(BORDER)
+                print(f"| Updated Details | {name:<20} | {old_exp:<11} | {new_exp:<11} | {now_ts():<20} |")
+                print_footer_and_done()
+            elif ch == "4":
+                new_mfg = input("Enter new manufacturing date (YYYY-MM-DD): ").strip()
+                old_mfg = self.inventory.at[idx,"MfgDate"]
+                self.inventory.at[idx,"MfgDate"] = new_mfg
+                save_inventory(self.inventory)
+                print_header("🔄 Update - Manufacturing Date")
+                print(f"| Action          | Medicine Name        | Old Mfg    | New Mfg    | Timestamp             |")
+                print(BORDER)
+                print(f"| Updated Details | {name:<20} | {old_mfg:<10} | {new_mfg:<10} | {now_ts():<20} |")
+                print_footer_and_done()
+            elif ch == "5":
+                print("✅ Finished updates for", name)
+                break
+            else:
+                print("❌ Invalid choice.")
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+    def remove_medicine(self):
+        print_header("🗑️ REMOVE MEDICINE")
+        name = input("Enter medicine name to remove: ").strip()
+        if name == "" or (name not in self.inventory["Name"].values):
+            print("❌ Medicine not found.")
+            return
+        self.inventory = self.inventory[self.inventory["Name"]!=name].reset_index(drop=True)
+        save_inventory(self.inventory)
+        ts = now_ts()
+        print_header("Medicine Removed")
+        print(f"| Action           | Medicine Name        | Status                 | Timestamp             |")
+        print(BORDER)
+        print(f"| Removed Medicine | {name:<20} | Successfully Removed   | {ts:<20} |")
+        print_footer_and_done()
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+    def display_inventory(self):
+        print_header("📋 INVENTORY")
+        if self.inventory.empty:
+            print("📦 Inventory is empty.")
+            return
+        print(f"| {'Medicine Name':<25} | {'Price (₹)':<8} | {'Quantity':<8} | {'Expiry Date':<12} |")
+        print(BORDER)
+        for _, r in self.inventory.iterrows():
+            print(f"| {r['Name']:<25} | ₹{r['Price']:<7.2f} | {int(r['Quantity']):<8} | {r['ExpiryDate']:<12} |")
+        print_footer_and_done()
 
-# SageMath parsed files
-*.sage.py
+    def search_medicine(self):
+        print_header("🔎 SEARCH MEDICINE")
+        name = input("Enter medicine name to search: ").strip()
+        found = self.inventory[self.inventory["Name"].str.contains(name, case=False, na=False)]
+        if found.empty:
+            print("❌ No medicine matched.")
+            return
+        print(f"| {'Medicine Name':<25} | {'Price (₹)':<8} | {'Quantity':<8} | {'Expiry Date':<12} |")
+        print(BORDER)
+        for _, r in found.iterrows():
+            print(f"| {r['Name']:<25} | ₹{r['Price']:<7.2f} | {int(r['Quantity']):<8} | {r['ExpiryDate']:<12} |")
+        print_footer_and_done()
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+    # ---------- Sales & billing (sell modified + aligned totals) ----------
+    def sell_medicine(self):
+        print_header("💵 SELL MEDICINE")
+        cust_name = input("Enter Customer Full Name: ").strip()
+        if cust_name == "":
+            print("❌ Customer name required.")
+            return
+        cust_clean = clean_name(cust_name)
+        cust_id = f"{cust_clean}_{datetime.now().year}"
 
-# Spyder project settings
-.spyderproject
-.spyproject
+        bill_id = next_bill_id()
+        timestamp = now_ts()
+        bill_rows = []
 
-# Rope project settings
-.ropeproject
+        # loop to add multiple medicines to single bill
+        while True:
+            med_name = input("Enter medicine name to sell (or 'q' to cancel/finish): ").strip()
+            if med_name.lower() == 'q':
+                if not bill_rows:
+                    print("❌ No items sold. Transaction cancelled.")
+                    return
+                else:
+                    break
+            if med_name not in self.inventory["Name"].values:
+                print("❌ Medicine not found.")
+                continue
+            try:
+                qty = int(input("Enter quantity to sell: ").strip())
+            except ValueError:
+                print("❌ Invalid quantity.")
+                continue
+            idx = self.inventory[self.inventory["Name"]==med_name].index[0]
+            stock = int(self.inventory.at[idx,"Quantity"])
+            price = float(self.inventory.at[idx,"Price"])
+            if qty <= 0:
+                print("❌ Quantity must be > 0.")
+                continue
+            if qty > stock:
+                print(f"⚠️ Not enough stock. Available: {stock}")
+                continue
 
-# mkdocs documentation
-/site
+            # Update inventory immediately for that item
+            self.inventory.at[idx,"Quantity"] = stock - qty
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+            total_cost = round(qty * price, 2)
+            new_row = {"BillID": bill_id, "CustomerName": cust_name, "CustomerID": cust_id,
+                       "Medicine": med_name, "Quantity": qty, "Price": price, "TotalCost": total_cost,
+                       "DateTime": timestamp}
+            bill_rows.append(new_row)
+            print(f"✅ Added: {med_name} x{qty} -> ₹{total_cost:.2f}")
 
-# Pyre type checker
-.pyre/
+            cont = input("Sell another medicine for same customer? (y/n): ").strip().lower()
+            if cont != 'y':
+                break
 
-# pytype static type analyzer
-.pytype/
+        # Persist changes
+        save_inventory(self.inventory)
 
-# Cython debug symbols
-cython_debug/
+        new_rows_df = pd.DataFrame(bill_rows)
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+        # append to all_bills
+        if os.path.exists(ALL_BILLS_FILE):
+            allb = load_all_bills()
+            allb = pd.concat([allb, new_rows_df], ignore_index=True)
+        else:
+            allb = new_rows_df
+        save_all_bills(allb)
+        self.all_bills = allb
 
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
+        # append to daily file
+        daily_file = os.path.join(DAILY_DIR, f"bills_{today_str()}.csv")
+        if os.path.exists(daily_file):
+            pd.concat([pd.read_csv(daily_file), new_rows_df], ignore_index=True).to_csv(daily_file, index=False)
+        else:
+            new_rows_df.to_csv(daily_file, index=False)
 
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+        # append to customer file
+        cust_file = os.path.join(CUSTOMER_DIR, f"{cust_clean}.csv")
+        if os.path.exists(cust_file):
+            pd.concat([pd.read_csv(cust_file), new_rows_df], ignore_index=True).to_csv(cust_file, index=False)
+        else:
+            new_rows_df.to_csv(cust_file, index=False)
 
-# Ruff stuff:
-.ruff_cache/
+        # Print combined bill with updated alignment (as requested)
+        print_header("🧾 DIGITAL MEDICAL SHOP - COMBINED BILL")
+        print(f"Customer Name : {cust_name}")
+        print(f"Customer ID   : {cust_id}")
+        print(f"Bill ID       : {bill_id}")
+        print(f"Date & Time   : {timestamp}")
+        print(BORDER)
+        # columns widths: Medicine(29) | Qty(6) | Price(10) | Total(12)
+        print(f"| {'Medicine Name':<29} | {'Qty':<5} | {'Price':<8} | {'Total':<10} |")
+        print(BORDER)
+        total_sum = 0.0
+        for _, r in new_rows_df.iterrows():
+            print(f"| {r['Medicine']:<29} | {int(r['Quantity']):<5} | ₹{r['Price']:<7.2f} | ₹{r['TotalCost']:<9.2f} |")
+            total_sum += float(r['TotalCost'])
 
-# PyPI configuration file
-.pypirc
+        gst = round(total_sum * 0.05, 2)
+        total_payable = round(total_sum + gst, 2)
 
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
+        # FINAL totals block matching your requested layout:
+        print(BORDER)
+        # This prints a leading "|" aligned with table, then the totals block (two columns)
+        print(f"|{'':>32} |  {'Total Sum':<15} | ₹{total_sum:<10.2f} |")
+        print(f"|{'':>32} |  {'GST (5%)':<15} | ₹{gst:<10.2f} |")
+        print(f"|{'':>32} |  {'Total Payable':<15} | ₹{total_payable:<10.2f} |")
+        print(BORDER)
+        print(f"{'THANK YOU! VISIT AGAIN':^{TABLE_WIDTH}}")
+        print(BORDER)
+        print(OP_COMPLETE + "\n")
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+    def generate_bill_for_customer(self):
+        print_header("🧾 GENERATE BILL (DISPLAY ONLY)")
+        cust_name = input("Enter Customer Name: ").strip()
+        if cust_name == "":
+            print("❌ Customer name required.")
+            return
+        cust_clean = clean_name(cust_name)
+        cust_file = os.path.join(CUSTOMER_DIR, f"{cust_clean}.csv")
+        if not os.path.exists(cust_file):
+            print("❌ No bills found for this customer.")
+            return
+        df = pd.read_csv(cust_file)
+        unique_bills = df[["BillID","DateTime"]].drop_duplicates().reset_index(drop=True)
+        if unique_bills.empty:
+            print("❌ No bills found for this customer.")
+            return
+        while True:
+            print("\nAvailable bills for", cust_name)
+            for i, row in unique_bills.iterrows():
+                print(f"{i+1}. BillID:{int(row['BillID'])}  DateTime: {row['DateTime']}")
+            choice = input("Select bill number to view (or 'q' to quit): ").strip().lower()
+            if choice == 'q':
+                break
+            try:
+                sel = int(choice) - 1
+                if sel < 0 or sel >= len(unique_bills):
+                    print("❌ Invalid selection.")
+                    continue
+            except ValueError:
+                print("❌ Invalid input.")
+                continue
+            chosen_billid = int(unique_bills.at[sel,"BillID"])
+            bill_lines = df[df["BillID"]==chosen_billid]
+            if bill_lines.empty:
+                print("❌ No data for selected bill.")
+                continue
+            # display bill grouped
+            print_header("🧾 DIGITAL MEDICAL SHOP BILL")
+            print(f"Customer Name : {cust_name}")
+            print(f"Customer ID   : {bill_lines.iloc[0]['CustomerID']}")
+            print(f"Bill ID       : {chosen_billid}")
+            print(f"Date & Time   : {bill_lines.iloc[0]['DateTime']}")
+            print(BORDER)
+            print(f"| {'Medicine Name':<29} | {'Qty':<5} | {'Price':<8} | {'Total':<10} |")
+            print(BORDER)
+            total_sum = 0.0
+            for _, r in bill_lines.iterrows():
+                print(f"| {r['Medicine']:<29} | {int(r['Quantity']):<5} | ₹{r['Price']:<7.2f} | ₹{r['TotalCost']:<9.2f} |")
+                total_sum += float(r['TotalCost'])
+            gst = round(total_sum * 0.05, 2)
+            total_payable = round(total_sum + gst, 2)
+            print(BORDER)
+            print(f"|{'':>32} |  {'Total Sum':<15} | ₹{total_sum:<10.2f} |")
+            print(f"|{'':>32} |  {'GST (5%)':<15} | ₹{gst:<10.2f} |")
+            print(f"|{'':>32} |  {'Total Payable':<15} | ₹{total_payable:<10.2f} |")
+            print(BORDER)
+            print(f"{'THANK YOU! VISIT AGAIN':^{TABLE_WIDTH}}")
+            print(BORDER)
+            print(OP_COMPLETE + "\n")
+            # loop asks again until user quits
+
+    # ---------- Sales Display Submenu ----------
+    def sales_display_options(self):
+        print_header("💹 SALES DASHBOARD")
+        print("1. View All Bills by Date")
+        print("2. View Daily Sales Summary")
+        print("3. View Monthly Sales Summary")
+        print("4. Back")
+        choice = input("Enter choice: ").strip()
+        if choice == "1":
+            files = sorted([f for f in os.listdir(DAILY_DIR) if f.startswith("bills_")])
+            if not files:
+                print("❌ No daily bill files found.")
+                return
+            print("\nAvailable daily bill files:")
+            for i,f in enumerate(files):
+                print(f"{i+1}. {f}")
+            sel = input("Select file number to open: ").strip()
+            try:
+                sel_i = int(sel)-1
+                if sel_i < 0 or sel_i >= len(files):
+                    print("❌ Invalid selection.")
+                    return
+            except ValueError:
+                print("❌ Invalid input.")
+                return
+            df = pd.read_csv(os.path.join(DAILY_DIR, files[sel_i]))
+            print_header(f"📄 Bills - {files[sel_i]}")
+            if df.empty:
+                print("No bills in this file.")
+            else:
+                print(df.to_string(index=False))
+            print_footer_and_done()
+        elif choice == "2":
+            if self.all_bills.empty:
+                print("❌ No sales records.")
+                return
+            df = self.all_bills.copy()
+            df['Date'] = pd.to_datetime(df['DateTime']).dt.date
+            daily = df.groupby('Date')['TotalCost'].agg(['sum','count']).reset_index()
+            print_header("📅 DAILY SALES SUMMARY")
+            print(f"| {'Date':<12} | {'Total Sales (₹)':<18} | {'Total Bills':<12} |")
+            print(BORDER)
+            for _, r in daily.iterrows():
+                print(f"| {str(r['Date']):<12} | ₹{r['sum']:<17.2f} | {int(r['count']):<12} |")
+            print_footer_and_done()
+        elif choice == "3":
+            if self.all_bills.empty:
+                print("❌ No sales records.")
+                return
+            df = self.all_bills.copy()
+            df['Month'] = pd.to_datetime(df['DateTime']).dt.to_period('M')
+            monthly = df.groupby('Month')['TotalCost'].agg(['sum','count']).reset_index()
+            print_header("📆 MONTHLY SALES SUMMARY")
+            print(f"| {'Month':<8} | {'Total Sales (₹)':<18} | {'Total Bills':<12} |")
+            print(BORDER)
+            for _, r in monthly.iterrows():
+                print(f"| {str(r['Month']):<8} | ₹{r['sum']:<17.2f} | {int(r['count']):<12} |")
+            print_footer_and_done()
+        else:
+            return
+
+    def low_stock_suggested(self):
+        print_header("🚨 LOW STOCK & SUGGESTED RESTOCK")
+        low = self.inventory[self.inventory["Quantity"] < 20]
+        if low.empty:
+            print("✅ No medicines below threshold (20).")
+            return
+        print(f"| {'Medicine':<25} | {'Qty':<6} | {'Suggested Restock (rounded to 10s)':<30} |")
+        print(BORDER)
+        for _, r in low.iterrows():
+            needed = max(50 - int(r['Quantity']), 0)  # target 50
+            suggested = round_up_to_10(needed)
+            print(f"| {r['Name']:<25} | {int(r['Quantity']):<6} | {suggested:<30} |")
+        print_footer_and_done()
+
+# ---------------- Main UI ----------------
+def main():
+    shop = DigitalMedicalShop()
+    # Welcome banner
+    print("\n" + "="*TABLE_WIDTH)
+    print("✨  DIGITAL MEDICAL SHOP MANAGEMENT  ✨".center(TABLE_WIDTH))
+    print("🏥  Your Trusted Digital Healthcare Partner  🏥".center(TABLE_WIDTH))
+    print("="*TABLE_WIDTH)
+
+    while True:
+        print("\nLogin As:")
+        print("1. 👨‍💼 Admin")
+        print("2. 🧍 Client")
+        print("3. 🚪 Exit")
+        role = input("Enter choice (1-3): ").strip()
+        if role == "1":
+            pwd = input("Enter Admin Password: ").strip()
+            if pwd != ADMIN_PASSWORD:
+                print("❌ Incorrect password. Access denied.")
+                continue
+            print("\n✅ Welcome Admin! Access granted.")
+            # Admin dashboard
+            while True:
+                print("\n" + "-"*80)
+                print("👨‍💼  ADMIN DASHBOARD".center(80))
+                print("-"*80)
+                print("1. Add Medicine")
+                print("2. Sell Medicine")
+                print("3. Generate Bill (display only)")
+                print("4. Update Medicine")
+                print("5. Search Medicine")
+                print("6. Display Inventory")
+                print("7. Remove Medicine")
+                print("8. Sales Display Options")
+                print("9. Low Stock Alerts & Suggested Restock")
+                print("10. Logout")
+                ch = input("Enter choice (1-10): ").strip()
+                if ch == "1":
+                    shop.add_medicine()
+                    shop.inventory = load_inventory()  # refresh
+                elif ch == "2":
+                    shop.sell_medicine()
+                    shop.inventory = load_inventory()
+                    shop.all_bills = load_all_bills()
+                elif ch == "3":
+                    shop.generate_bill_for_customer()
+                    shop.all_bills = load_all_bills()
+                elif ch == "4":
+                    shop.update_medicine()
+                    shop.inventory = load_inventory()
+                elif ch == "5":
+                    shop.search_medicine()
+                elif ch == "6":
+                    shop.display_inventory()
+                elif ch == "7":
+                    shop.remove_medicine()
+                    shop.inventory = load_inventory()
+                elif ch == "8":
+                    shop.sales_display_options()
+                    shop.all_bills = load_all_bills()
+                elif ch == "9":
+                    shop.low_stock_suggested()
+                elif ch == "10":
+                    print("🔒 Logging out admin.")
+                    break
+                else:
+                    print("❌ Invalid option.")
+        elif role == "2":
+            # Client flow
+            print("\n🧍 CLIENT DASHBOARD")
+            while True:
+                print("\n1. Search Medicine")
+                print("2. View Previous Bills")
+                print("3. Back")
+                c = input("Enter choice (1-3): ").strip()
+                if c == "1":
+                    shop.search_medicine()
+                elif c == "2":
+                    cust_name = input("Enter your full name: ").strip()
+                    if cust_name == "":
+                        print("❌ Name required.")
+                        continue
+                    cust_clean = clean_name(cust_name)
+                    cust_file = os.path.join(CUSTOMER_DIR, f"{cust_clean}.csv")
+                    if not os.path.exists(cust_file):
+                        print("❌ No bills found for this name.")
+                        continue
+                    df = pd.read_csv(cust_file)
+                    if df.empty:
+                        print("❌ No bills found.")
+                        continue
+                    # list unique bills
+                    unique = df[["BillID","DateTime"]].drop_duplicates().reset_index(drop=True)
+                    while True:
+                        print("\nYour Bills:")
+                        for i,row in unique.iterrows():
+                            print(f"{i+1}. BillID:{int(row['BillID'])}   DateTime:{row['DateTime']}")
+                        sel = input("Select bill number to view (or 'q' to quit): ").strip().lower()
+                        if sel == 'q':
+                            break
+                        try:
+                            si = int(sel)-1
+                            if si < 0 or si >= len(unique):
+                                print("❌ Invalid selection.")
+                                continue
+                        except ValueError:
+                            print("❌ Invalid input.")
+                            continue
+                        billid = int(unique.at[si,"BillID"])
+                        bill_lines = df[df["BillID"]==billid]
+                        # display
+                        print_header("🧾 YOUR BILL")
+                        print(f"Customer Name : {cust_name}")
+                        print(f"Customer ID   : {bill_lines.iloc[0]['CustomerID']}")
+                        print(f"Bill ID       : {billid}")
+                        print(f"Date & Time   : {bill_lines.iloc[0]['DateTime']}")
+                        print(BORDER)
+                        print(f"| {'Medicine Name':<29} | {'Qty':<5} | {'Price':<8} | {'Total':<10} |")
+                        print(BORDER)
+                        total_sum = 0.0
+                        for _, r in bill_lines.iterrows():
+                            print(f"| {r['Medicine']:<29} | {int(r['Quantity']):<5} | ₹{r['Price']:<7.2f} | ₹{r['TotalCost']:<9.2f} |")
+                            total_sum += float(r['TotalCost'])
+                        gst = round(total_sum * 0.05, 2)
+                        total_payable = round(total_sum + gst, 2)
+                        print(BORDER)
+                        print(f"|{'':>32} |  {'Total Sum':<15} | ₹{total_sum:<10.2f} |")
+                        print(f"|{'':>32} |  {'GST (5%)':<15} | ₹{gst:<10.2f} |")
+                        print(f"|{'':>32} |  {'Total Payable':<15} | ₹{total_payable:<10.2f} |")
+                        print(BORDER)
+                        print(f"{'THANK YOU! VISIT AGAIN':^{TABLE_WIDTH}}")
+                        print(BORDER)
+                        print(OP_COMPLETE + "\n")
+                        # loop continues so client can view other bills until they quit
+                elif c == "3":
+                    break
+                else:
+                    print("❌ Invalid choice.")
+        elif role == "3":
+            print("\n👋 Thank you for using DIGITAL MEDICAL SHOP MANAGEMENT. Bye!")
+            break
+        else:
+            print("❌ Invalid selection. Choose 1, 2 or 3.")
+
+if __name__ == "__main__":
+    main()
